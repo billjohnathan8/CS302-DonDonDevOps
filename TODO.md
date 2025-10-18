@@ -1,0 +1,11 @@
+WIP:
+- GitHub Issues
+- Sync with Gitlab
+- Sync with AWS
+- .gitignore
+- /github/workflows
+- terraform
+- git commit conventions
+- api-gateway
+- AWS Architecture Diagram
+- Stripe API Integration
