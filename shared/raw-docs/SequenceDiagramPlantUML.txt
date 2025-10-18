@@ -1,0 +1,39 @@
+@startuml
+
+skinparam actorStyle awesome
+skinparam defaultTextAlignment center
+skinparam maxMessageSize 150
+skinparam Shadowing false
+skinparam ParticipantPadding 20
+
+actor "Customer" as customer #lightgreen
+participant "Cart" as cart
+participant "Inventory" as inventory
+participant "Promotion" as promotion
+participant "Payment" as payment
+participant "Notification" as notification
+
+loop for items to buy
+ customer -> customer : add item to cart
+ customer -> cart : send cart
+ cart -> inventory : get cart price
+
+ alt has promotional items
+   inventory -> promotion : apply promotions
+   promotion -->> inventory : cart price with promotions
+ end
+
+ inventory -->> cart : cart price
+ cart -->> customer : total cart price
+end
+
+customer -> cart : checkout
+cart -->> customer : finalise
+
+customer -> payment : pay
+payment -->> customer : acknowledge
+
+payment ->> notification : send payment receipt
+payment ->> inventory : items bought
+
+@enduml
