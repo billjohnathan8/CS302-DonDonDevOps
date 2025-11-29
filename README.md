@@ -14,6 +14,12 @@ A Web Application for Point-of-Sales Transactions in Retail Stores.
 - Languages: TypeScript, Python, Java
 - Third-Party Software Integration: Stripe API
 
+# Development Toolchain
+- Device OS: Windows, MacOS, Linux (Debian Distro)
+- IDEs: IntelliJ IDEA, Neovim, VSCode
+- VCS: Git
+- AI Tooling: OpenAI Codex, Figma Make
+
 # Pulling from the Repo
 - Pull from each individual microservice folder directory.
 - When making changes, remember to use API Versioning for Naming (e.g. XYZ/v1)
