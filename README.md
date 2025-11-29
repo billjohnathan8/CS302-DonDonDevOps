@@ -126,7 +126,7 @@ terraform apply -var-file=terraform.tfvars
 - Create a dedicated GitLab CI/CD pipeline so tests, scans, and deploys stay service-scoped
 - Expose a `/health` endpoint to support automated monitors and environment smoke tests
 
-## Tooling & Environments
+## Tooling & Environments for Local Development (Project History) 
 - **Developer OS**: Windows, macOS, and Debian-based Linux
 - **IDEs**: IntelliJ IDEA, VS Code, Neovim
 - **Version Control**: Git with GitLab as the production remote
