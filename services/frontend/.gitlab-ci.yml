@@ -1,0 +1,56 @@
+# This is a GitLab CI/CD pipeline for building a Docker image for a Next.js application.
+#
+# This pipeline uses Docker-in-Docker to build the image and pushes it to the GitLab Container Registry.
+# For this to work, the GitLab Runner needs to have the docker executor enabled.
+#
+# The following GitLab CI/CD predefined variables are used:
+# - CI_REGISTRY_USER: The username to use to log in to the container registry.
+# - CI_REGISTRY_PASSWORD: The password to use to log in to the container registry.
+# - CI_REGISTRY: The address of the container registry.
+# - CI_REGISTRY_IMAGE: The name of the image to build.
+#
+# --- Custom secrets for ECS Deployment ---
+# - AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+# - AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+# - AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION"
+# - ECS_CLUSTER_NAME="$ECS_CLUSTER_NAME"
+# - ECS_SERVICE_NAME="$ECS_SERVICE_NAME"
+
+stages:
+  - Containerize
+  - Deploy
+
+containerize:
+  stage: Containerize
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker pull "$CI_REGISTRY_IMAGE" || true
+    - docker build
+      --cache-from "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:latest" 
+      --pull
+      -t "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:latest"
+      -t "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH" --all-tags
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "main"'
+
+deploy-ecs:
+  stage: Deploy
+  image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-ecs:latest
+  needs:
+    - job: containerize
+      artifacts: false # We only need the image to be pushed to the registry
+  environment:
+    name: production-ecs
+  script:
+    - aws ecs update-service
+      --cluster "$ECS_CLUSTER_NAME"
+      --service "$ECS_SERVICE_NAME"
+      --force-new-deployment
+    - echo "ECS service $ECS_SERVICE_NAME updated"
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "main"'

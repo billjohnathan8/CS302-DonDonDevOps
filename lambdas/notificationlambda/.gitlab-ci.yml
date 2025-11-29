@@ -1,0 +1,31 @@
+stages:
+  - test
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+test_lambda:
+  image: python:3.11
+  stage: test
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - pytest -v tests
+  only:
+    - main
+
+deploy_lambda:
+  image: python:3.11
+  stage: deploy
+  before_script:
+    - apt-get update && apt-get install -y zip
+    - pip install --upgrade awscli
+    - pwd
+    - ls -la
+    - zip -r function.zip .
+  script:
+    - aws lambda update-function-code --function-name "$LAMBDA_FUNCTION_NAME" --zip-file "fileb://function.zip" --region "$AWS_DEFAULT_REGION"
+  only:
+    - main
