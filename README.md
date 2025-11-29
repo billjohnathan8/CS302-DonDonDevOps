@@ -2,17 +2,17 @@
 A Web Application for Point-of-Sales Transactions in Retail Stores.
 
 # Status
-Current Project Status: Retired
-Award: Tied for Best Project Presentation
+- Current Project Status: Retired
+- Award: Tied for Best Project Presentation
 
 # Tech Stack: 
-Architecture: Microservices Architecture
-Cloud Vendor: AWS
-Frameworks: Next.js, FastAPI, Micronaut, Springboot
-CI/CD (Before Retirement): GitLab (Production VCS), SonarQube
-Toolchain: Docker, Docker Compose, Gradle, GitHub (Retired Documentation & VCS), Terraform, Terraformer
-Languages: TypeScript, Python, Java
-Third-Party Software Integration: Stripe API
+- Architecture: Microservices Architecture
+- Cloud Vendor: AWS
+- Frameworks: Next.js, FastAPI, Micronaut, Springboot
+- CI/CD (Before Retirement): GitLab (Production VCS), SonarQube
+- Toolchain: Docker, Docker Compose, Gradle, GitHub (Retired Documentation & VCS), Terraform, Terraformer
+- Languages: TypeScript, Python, Java
+- Third-Party Software Integration: Stripe API
 
 # Pulling from the Repo
 - Pull from each individual microservice folder directory.
