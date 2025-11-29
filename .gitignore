@@ -1,5 +1,5 @@
 # Code Editor Configs (VSCode)
-./vscode
+.vscode/
 
 # Secrets Manager
 .env
