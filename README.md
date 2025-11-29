@@ -13,6 +13,7 @@ Toolchain: Docker, Docker Compose, Gradle, GitHub (Retired Documentation & VCS),
 Languages: TypeScript, Python, Java
 
 # Pulling from the Repo
+- Pull from each individual microservice folder directory.
 - When making changes, remember to use API Versioning for Naming (e.g. XYZ/v1)
 - Remember to follow the API Contract when mocking/stubbing other services under shared/api-contracts/
 - Remember to edit the API Contract for your own service if making major changes to the service under shared/api-contracts/
