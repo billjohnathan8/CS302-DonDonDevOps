@@ -1,0 +1,64 @@
+{
+  "name": "Java/Kotlin Microservice Dev Environment",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle",
+        "vscjava.vscode-maven",
+        "redhat.java",
+        "vscjava.vscode-java-debug",
+        "vscjava.vscode-java-test",
+        "fwcd.kotlin",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "amazonwebservices.aws-toolkit-vscode"
+      ],
+
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.server.launchMode": "Standard",
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/build/**": true,
+          "**/.gradle/**": true,
+          "**/target/**": true,
+          "**/.m2/**": true
+        }
+      }
+    }
+  },
+
+  "forwardPorts": [8080, 5005, 4566],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "Application",
+      "onAutoForward": "notify"
+    },
+    "5005": {
+      "label": "Java Debugger",
+      "onAutoForward": "silent"
+    },
+    "4566": {
+      "label": "LocalStack",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "remoteUser": "devuser",
+
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/home/devuser/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.ssh,target=/home/devuser/.ssh,type=bind,consistency=cached"
+  ]
+}

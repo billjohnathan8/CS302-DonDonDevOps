@@ -1,0 +1,105 @@
+{
+  "name": "Node.js Microservice Dev Environment",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+
+  // Configure VS Code settings
+  "customizations": {
+    "vscode": {
+      // Extensions to install
+      "extensions": [
+        // JavaScript/TypeScript
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next",
+
+        // Docker
+        "ms-azuretools.vscode-docker",
+
+        // Git
+        "eamodio.gitlens",
+
+        // AWS
+        "amazonwebservices.aws-toolkit-vscode",
+
+        // Testing
+        "hbenl.vscode-test-explorer",
+        "firsttris.vscode-jest-runner",
+
+        // Utilities
+        "christian-kohler.npm-intellisense",
+        "christian-kohler.path-intellisense",
+        "usernamehw.errorlens",
+        "gruntfuggly.todo-tree",
+        "wayou.vscode-todo-highlight"
+      ],
+
+      // Settings
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "files.watcherExclude": {
+          "**/node_modules/**": true,
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/dist/**": true,
+          "**/build/**": true
+        }
+      }
+    }
+  },
+
+  // Post-create command to run after container is created
+  "postCreateCommand": "npm install",
+
+  // Forward ports automatically
+  "forwardPorts": [3000, 9229, 4566],
+
+  // Port labels
+  "portsAttributes": {
+    "3000": {
+      "label": "Application",
+      "onAutoForward": "notify"
+    },
+    "9229": {
+      "label": "Node.js Debugger",
+      "onAutoForward": "silent"
+    },
+    "4566": {
+      "label": "LocalStack",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Features to add
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // Use 'node' user (non-root)
+  "remoteUser": "node",
+
+  // Uncomment to connect as root instead
+  // "remoteUser": "root",
+
+  // Mount additional volumes
+  "mounts": [
+    // Mount git config
+    "source=${localEnv:HOME}/.gitconfig,target=/home/node/.gitconfig,type=bind,consistency=cached",
+    // Mount SSH keys (for Git operations)
+    "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind,consistency=cached"
+  ]
+}

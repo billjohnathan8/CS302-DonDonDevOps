@@ -1,0 +1,143 @@
+version: '3.9'
+
+# Integration Environment
+# This docker-compose file orchestrates multiple microservices for integration testing
+
+services:
+  # LocalStack - Shared AWS services emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: integration-localstack
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      - SERVICES=s3,dynamodb,sqs,sns,lambda,apigateway,secretsmanager,ssm,rds,ec2,ecs,ecr,cloudwatch,logs
+      - DEBUG=1
+      - DATA_DIR=/var/lib/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LAMBDA_EXECUTOR=docker-reuse
+      - PERSISTENCE=1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../shared/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # PostgreSQL - Shared database
+  postgres:
+    image: postgres:15-alpine
+    container_name: integration-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=integration_db
+      - POSTGRES_MULTIPLE_DATABASES=service1_db,service2_db,service3_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../shared/configs/postgres-init.sh:/docker-entrypoint-initdb.d/init.sh
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Shared cache
+  redis:
+    image: redis:7-alpine
+    container_name: integration-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Example Microservice 1 (Node.js)
+  # Uncomment and customize as needed
+  # service1:
+  #   build:
+  #     context: ../../your-microservices/service1
+  #     dockerfile: Dockerfile
+  #   container_name: integration-service1
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     - NODE_ENV=development
+  #     - AWS_ENDPOINT_URL=http://localstack:4566
+  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/service1_db
+  #     - REDIS_URL=redis://redis:6379
+  #     - SERVICE2_URL=http://service2:8000
+  #   networks:
+  #     - microservices
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # Example Microservice 2 (Python)
+  # Uncomment and customize as needed
+  # service2:
+  #   build:
+  #     context: ../../your-microservices/service2
+  #     dockerfile: Dockerfile
+  #   container_name: integration-service2
+  #   ports:
+  #     - "8001:8000"
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - AWS_ENDPOINT_URL=http://localstack:4566
+  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/service2_db
+  #     - REDIS_URL=redis://redis:6379
+  #     - SERVICE1_URL=http://service1:3000
+  #   networks:
+  #     - microservices
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # API Gateway / Reverse Proxy (optional)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: integration-nginx
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ../shared/configs/nginx.conf:/etc/nginx/nginx.conf:ro
+  #   networks:
+  #     - microservices
+  #   depends_on:
+  #     - service1
+  #     - service2
+
+networks:
+  microservices:
+    driver: bridge
+    name: microservices-network
+
+volumes:
+  localstack_data:
+  postgres_data:
+  redis_data:

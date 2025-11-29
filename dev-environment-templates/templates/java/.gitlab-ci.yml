@@ -1,0 +1,118 @@
+# GitLab CI/CD Pipeline for Java/Kotlin Microservice
+# This pipeline mirrors the local development environment setup
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  JAVA_VERSION: "17"
+  AWS_DEFAULT_REGION: "us-east-1"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+
+# Cache Gradle dependencies
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .gradle/wrapper
+    - .gradle/caches
+
+# Test stage
+test:
+  stage: test
+  image: eclipse-temurin:17-jdk-jammy
+  before_script:
+    - java -version
+    - chmod +x gradlew
+  script:
+    - ./gradlew check test --info
+    - ./gradlew jacocoTestReport
+  coverage: '/Total.*?([0-9]{1,3})%/'
+  artifacts:
+    reports:
+      junit: build/test-results/test/TEST-*.xml
+    paths:
+      - build/reports/tests/test/
+      - build/reports/jacoco/test/html/
+    expire_in: 30 days
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Build JAR/WAR
+build:jar:
+  stage: build
+  image: eclipse-temurin:17-jdk-jammy
+  before_script:
+    - java -version
+    - chmod +x gradlew
+  script:
+    - ./gradlew build -x test
+  artifacts:
+    paths:
+      - build/libs/*.jar
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+
+# Build Docker image
+build:docker:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker build -t $CI_REGISTRY_IMAGE:latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  only:
+    - main
+    - develop
+
+# Deploy to AWS (via GitLab integration)
+deploy:dev:
+  stage: deploy
+  image:
+    name: amazon/aws-cli:latest
+    entrypoint: [""]
+  before_script:
+    - aws --version
+  script:
+    - echo "Deploying to AWS development environment..."
+    # Add your AWS deployment commands here
+    # Example for ECS:
+    # - aws ecs update-service --cluster dev-cluster --service $SERVICE_NAME --force-new-deployment
+    # Example for Elastic Beanstalk:
+    # - aws elasticbeanstalk update-environment --environment-name $EB_ENV --version-label $CI_COMMIT_SHA
+  environment:
+    name: development
+    url: https://dev.example.com
+  only:
+    - develop
+  when: manual
+
+deploy:prod:
+  stage: deploy
+  image:
+    name: amazon/aws-cli:latest
+    entrypoint: [""]
+  before_script:
+    - aws --version
+  script:
+    - echo "Deploying to AWS production environment..."
+    # Add your AWS deployment commands here
+  environment:
+    name: production
+    url: https://example.com
+  only:
+    - main
+  when: manual

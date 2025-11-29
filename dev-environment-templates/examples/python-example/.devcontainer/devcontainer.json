@@ -1,0 +1,106 @@
+{
+  "name": "Python Microservice Dev Environment",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+
+  // Configure VS Code settings
+  "customizations": {
+    "vscode": {
+      // Extensions to install
+      "extensions": [
+        // Python
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.flake8",
+        "ms-python.mypy-type-checker",
+
+        // Docker
+        "ms-azuretools.vscode-docker",
+
+        // Git
+        "eamodio.gitlens",
+
+        // AWS
+        "amazonwebservices.aws-toolkit-vscode",
+      ],
+
+      // Settings
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.linting.flake8Enabled": true,
+        "python.formatting.provider": "none",
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        },
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "black-formatter.args": [
+          "--line-length=100"
+        ],
+        "flake8.args": [
+          "--max-line-length=100"
+        ],
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/__pycache__/**": true,
+          "**/.pytest_cache/**": true,
+          "**/.mypy_cache/**": true,
+          "**/dist/**": true,
+          "**/build/**": true,
+          "**/*.egg-info/**": true
+        }
+      }
+    }
+  },
+
+  // Post-create command to run after container is created
+  "postCreateCommand": "pip install -r requirements.txt",
+
+  // Forward ports automatically
+  "forwardPorts": [8000, 5678, 4566],
+
+  // Port labels
+  "portsAttributes": {
+    "8000": {
+      "label": "Application",
+      "onAutoForward": "notify"
+    },
+    "5678": {
+      "label": "Python Debugger",
+      "onAutoForward": "silent"
+    },
+    "4566": {
+      "label": "LocalStack",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Features to add
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // Use 'python' user (non-root)
+  "remoteUser": "python",
+
+  // Mount additional volumes
+  "mounts": [
+    // Mount git config
+    "source=${localEnv:HOME}/.gitconfig,target=/home/python/.gitconfig,type=bind,consistency=cached",
+    // Mount SSH keys (for Git operations)
+    "source=${localEnv:HOME}/.ssh,target=/home/python/.ssh,type=bind,consistency=cached"
+  ]
+}

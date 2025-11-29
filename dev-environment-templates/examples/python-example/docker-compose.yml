@@ -1,0 +1,109 @@
+services:
+  # Main development container for your microservice
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${SERVICE_NAME:-microservice}-dev
+    volumes:
+      # Mount your source code
+      - .:/workspace:cached
+      # Mount pip cache for faster rebuilds
+      - pip_cache:/home/python/.cache/pip
+      # Mount shared scripts
+      - ../../shared/scripts:/scripts:ro
+    ports:
+      # Application port (customize as needed)
+      - "${APP_PORT:-8000}:8000"
+      # Debug port for Python debugger
+      - "${DEBUG_PORT:-5678}:5678"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - DATABASE_URL=${DATABASE_URL:-}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    networks:
+      - microservices
+    depends_on:
+      localstack:
+        condition: service_healthy
+    command: bash -c "pip install -r requirements.txt && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    stdin_open: true
+    tty: true
+
+  # LocalStack for AWS service emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: ${SERVICE_NAME:-microservice}-localstack
+    ports:
+      - "4566:4566"            # LocalStack gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=${LOCALSTACK_SERVICES:-s3,dynamodb,sqs,sns,lambda,apigateway,secretsmanager,ssm}
+      - DEBUG=1
+      - DATA_DIR=/var/lib/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LAMBDA_EXECUTOR=docker-reuse
+      - PERSISTENCE=1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../shared/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL (optional - uncomment if needed)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: ${SERVICE_NAME:-microservice}-postgres
+  #   environment:
+  #     - POSTGRES_USER=${POSTGRES_USER:-postgres}
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+  #     - POSTGRES_DB=${POSTGRES_DB:-microservice_dev}
+  #   ports:
+  #     - "${POSTGRES_PORT:-5432}:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - microservices
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Redis (optional - uncomment if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ${SERVICE_NAME:-microservice}-redis
+  #   ports:
+  #     - "${REDIS_PORT:-6379}:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - microservices
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  microservices:
+    driver: bridge
+    name: microservices-network
+
+volumes:
+  pip_cache:
+  localstack_data:
+  # postgres_data:
+  # redis_data:
