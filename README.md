@@ -19,6 +19,7 @@ A Web Application for Point-of-Sales Transactions in Retail Stores.
 - IDEs: IntelliJ IDEA, Neovim, VSCode
 - VCS: Git
 - AI Tooling: OpenAI Codex, Figma Make
+- Custom Docker Development Containers (Researched but Retired)
 
 # Pulling from the Repo
 - Pull from each individual microservice folder directory.
