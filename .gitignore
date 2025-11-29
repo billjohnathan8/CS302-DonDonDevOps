@@ -1,4 +1,11 @@
+# Code Editor Configs (VSCode)
 ./vscode
+
+# Secrets Manager
+.env
+*.env.local
+*.pem
+secrets.*
 
 # Terraform
 *.tfstate
