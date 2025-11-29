@@ -1,4 +1,15 @@
 # DonDonDevOps
+
+![AWS](https://img.shields.io/badge/AWS-Cloud%20Native-orange)
+![Terraform](https://img.shields.io/badge/IaC-Terraform-purple)
+![Microservices](https://img.shields.io/badge/Architecture-Microservices-blue)
+![NextJS](https://img.shields.io/badge/Next.js-000000?logo=next.js&logoColor=white)
+![TypeScript](https://shields.io/badge/TypeScript-3178C6?logo=TypeScript&logoColor=FFF&style=flat-square)
+![Python](https://img.shields.io/badge/Python-Backend-blue)
+![Java](https://img.shields.io/badge/Backend-Java-red)
+![Project Logo](./documentation/branding-logo/dddvp-logo.png)
+
+# Project Description
 DonDonDevOps is a microservices-based point-of-sales platform for retail teams. While the codebase is now retired, it demonstrates the team's DevOps-first mindset of: flow, feedback, and continuous learning + experimentation. Our rapid iteration is supported by CI/CD practices grounded in a strong testing culture and focused documentation approach.
 
 ## Overview
@@ -130,7 +141,7 @@ terraform apply -var-file=terraform.tfvars
 - **Developer OS**: Windows, macOS, and Debian-based Linux
 - **IDEs**: IntelliJ IDEA, VS Code, Neovim
 - **Version Control**: Git with GitLab as the production remote
-- **AI & Design**: OpenAI Codex for assisted coding and Figma Make for rapid UI ideation
+- **AI & Design**: OpenAI Codex for assisted coding and Figma Make for rapid UI ideation, DALLE for Logo Image Generation
 - **Custom Docker dev containers** were researched to standardize onboarding but were ultimately retired with the project
 
 ## Contributors
