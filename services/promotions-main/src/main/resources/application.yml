@@ -1,0 +1,45 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: promotions-service
+
+  # RabbitMQ Configuration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:myuser}
+    password: ${RABBITMQ_PASSWORD:secret}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 3
+          multiplier: 2.0
+        default-requeue-rejected: false  # Failed messages go to DLQ
+    template:
+      retry:
+        enabled: true
+        initial-interval: 1000
+        max-attempts: 3
+        multiplier: 2.0
+
+dynamodb:
+  region: ${AWS_REGION:ap-southeast-1}
+  endpoint: ${DYNAMODB_ENDPOINT:}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+dynamodb:
+  endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod

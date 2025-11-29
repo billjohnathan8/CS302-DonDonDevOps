@@ -1,0 +1,1 @@
+NOTE: All Lambdas belong to AWS as server-less code/functions uploaded on our primary cloud vendor & cloud infrastructure. They will not work natively (out-of-the-box) by purely pulling from this repository.

@@ -1,0 +1,2 @@
+dynamodb-local.host: localhost
+dynamodb-local.port: 8000

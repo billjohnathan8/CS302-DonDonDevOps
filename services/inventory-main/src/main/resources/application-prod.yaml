@@ -1,0 +1,5 @@
+# Production configuration for AWS deployment
+rabbitmq:
+  uri: amqps://${RABBITMQ_USERNAME}:${RABBITMQ_PASSWORD}@${RABBITMQ_HOST}:${RABBITMQ_PORT:5671}
+  ssl:
+    enabled: true

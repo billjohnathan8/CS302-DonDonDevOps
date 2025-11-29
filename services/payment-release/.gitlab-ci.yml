@@ -1,0 +1,124 @@
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+stages:
+  - gradle
+  - containerize
+  - deploy
+  - scan
+
+# DinD service is required for Testcontainers in gradlew test and docker-build
+services:
+  - name: docker:dind
+    # explicitly disable tls to avoid docker startup interruption
+    command: ["--tls=false"]
+
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar" # Defines the location of the analysis task cache
+  DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE # Use GitLab's predefined registry image variable
+  # Instruct Testcontainers to use the daemon of DinD, use port 2375 for non-tls connections.
+  DOCKER_HOST: "tcp://docker:2375"
+  # Instruct Docker not to start over TLS.
+  DOCKER_TLS_CERTDIR: ""
+  # Improve performance with overlayfs.
+  DOCKER_DRIVER: overlay2
+
+cache:
+  key:
+    files:
+      - gradle/wrapper/gradle-wrapper.properties
+  paths:
+    - gradle/wrapper
+    - .gradle
+
+sonarcloud-check:
+  stage: gradle
+  image: gradle:jdk21
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script: gradle sonar
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
+      when: always
+    - when: manual
+
+gradle:
+  stage: gradle
+  image: mcr.microsoft.com/openjdk/jdk:21-ubuntu
+  before_script:
+    - | # Format VERSION to major.minor.commit-sha
+      export MAJOR_MINOR_VERSION=$(git describe --tags --match "[0-9]*.[0-9]*" --abbrev=0 || echo "0.0")
+      export VERSION="${MAJOR_MINOR_VERSION}.${CI_COMMIT_SHORT_SHA}"
+      echo "Building Docker image with version: $VERSION"
+  script:
+    - ./gradlew build
+    - ./gradlew -Pversion=$VERSION bootJar
+  artifacts:
+    reports:
+      junit: build/test-results/test/**/TEST-*.xml
+    paths:
+      - build/libs/payment-$VERSION.jar
+      - build/test-results
+      - build/
+    expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
+      when: always
+    - when: manual
+
+docker-build:
+  stage: containerize
+  image: docker:latest
+  needs:
+    - job: gradle
+      artifacts: true # We need the JAR file from the build job
+    - job: sonarcloud-check
+  before_script:
+    - | # Format VERSION to major.minor.commit-sha
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+      export MAJOR_MINOR_VERSION=$(git describe --tags --match "[0-9]*.[0-9]*" --abbrev=0 || echo "0.0")
+      export VERSION="${MAJOR_MINOR_VERSION}.${CI_COMMIT_SHORT_SHA}"
+      echo "Building Docker image with version: $VERSION"
+  script:
+    - docker build --pull
+      -t "$DOCKER_IMAGE_NAME:$VERSION"
+      -t "$DOCKER_IMAGE_NAME:latest"
+      --build-arg VERSION=$VERSION .
+    - docker push "$DOCKER_IMAGE_NAME:$VERSION"
+    - docker push "$DOCKER_IMAGE_NAME:latest"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
+      when: always
+    - when: manual
+
+ecs-deploy-job:
+  stage: deploy
+  image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
+  needs:
+    - job: docker-build
+      artifacts: false # We only need the image to be pushed to the registry
+  script:
+    # --- Secrets from GitLab CI/CD settings ---
+    # AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+    # AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+    # AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION"
+    # ECS_CLUSTER_NAME="$ECS_CLUSTER_NAME"
+    # ECS_SERVICE_NAME="$ECS_SERVICE_NAME"
+    - aws ecs update-service
+      --cluster "$ECS_CLUSTER_NAME"
+      --service "$ECS_SERVICE_NAME"
+      --force-new-deployment
+    - echo "ECS service $ECS_SERVICE_NAME updated"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release"'
+      when: always
+    - when: manual
+
+container_scanning:
+  stage: scan
+  variables:
+    CS_IMAGE: "$DOCKER_IMAGE_NAME:latest"
+  needs:
+    - job: docker-build

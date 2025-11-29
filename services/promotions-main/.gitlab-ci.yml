@@ -1,0 +1,98 @@
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+# -------- Stages ------------
+stages:
+  - build
+  - sonarcloud-check
+  - release
+  - deploy
+  - scan
+
+# -------- Global variables --------
+variables:
+  GIT_DEPTH: "0"
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GRADLE_USER_HOME: "${CI_PROJECT_DIR}/.gradle"
+  DOCKER_BUILDKIT: "1"
+  # helpful for reproducibility
+  DOCKER_DRIVER: overlay2
+
+# -------- Build Stage ------------
+build:
+  stage: build
+  image: gradle:jdk21
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .gradle/caches
+      - .gradle/wrapper
+  script:
+    - gradle clean build -x test
+  artifacts:
+    paths:
+      - build/libs/
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+
+# -------- Sonarcloud & Testing Stage ------------
+sonarcloud-check:
+  stage: sonarcloud-check
+  image: gradle:jdk21
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script: gradle test -PexcludeIntegration jacocoTestReport sonar -Dsonar.qualitygate.wait=true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
+      allow_failure: true
+
+# -------- Build & push Docker image (branch:sha + branch:latest) --------
+release-image:
+  stage: release
+  image: docker:28.3.2
+  services:
+    - docker:28.3.2-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
+      allow_failure: true
+
+# -------- Deploy to AWS ECS (Production) --------
+deploy-ecs:
+  stage: deploy
+  image: 'registry.gitlab.com/gitlab-org/cloud-deploy/aws-ecs:latest'
+  environment:
+    name: promotions-prod
+    deployment_tier: production
+  needs: ["release-image"]
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "main"'
+  variables:
+    # Point the helper at the exact image you just built
+    CI_AWS_ECS_IMAGE: "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA"
+    # Optional timeout override (seconds)
+    CI_AWS_ECS_TIMEOUT: "600"
+  script:
+    # Updates the task definition's container image and forces a new deployment
+    - ecs update-task-definition
+
+# -------- Container Scan Stage ------------
+container_scanning:
+  stage: scan
+  variables:
+    CS_IMAGE: "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA"
+  needs: [ "release-image" ]

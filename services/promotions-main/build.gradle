@@ -1,0 +1,82 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.6'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id "org.sonarqube" version "7.0.1.6134"
+	id "jacoco"
+}
+
+group = 'org.ddk'
+version = '0.0.1-SNAPSHOT'
+description = 'Demo project for Spring Boot'
+
+sonar {
+  properties {
+    property "sonar.projectKey", "cs302-2025_promotions"
+    property "sonar.organization", "g1-team8"
+	property("sonar.sources", "src/main")
+	property "sonar.tests", "src/test"
+  }
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+    // Observability: Actuator endpoints and Prometheus metrics
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+	implementation 'io.awspring.cloud:spring-cloud-aws-starter-dynamodb:3.4.0'
+	implementation platform('software.amazon.awssdk:bom:2.25.61')
+	implementation 'software.amazon.awssdk:dynamodb-enhanced'
+	// implementation 'org.springframework.boot:spring-boot-starter-restclient'
+	// implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation platform('org.testcontainers:testcontainers-bom:2.0.1')
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-amqp-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-data-jdbc-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-jdbc-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-restclient-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.amqp:spring-rabbit-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform {
+        if (project.hasProperty('excludeIntegration')) {
+            excludeTags 'integration'
+        }
+    }
+
+    if (project.hasProperty('excludeIntegration')) {
+        exclude '**/integration/**'
+    }
+}
+
+jacocoTestReport {
+    reports {
+		xml.required.set(true)
+    }
+}

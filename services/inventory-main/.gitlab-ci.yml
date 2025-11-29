@@ -1,0 +1,86 @@
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+stages:
+  - build
+  - sonarcloud-check
+  - release
+  - deploy
+  - scan
+
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GIT_DEPTH: "0"
+
+sonarcloud-check:
+  stage: sonarcloud-check
+  image: gradle:jdk21
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script: gradle test -PexcludeIntegration jacocoTestReport sonar -Dsonar.qualitygate.wait=true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
+
+build-layers:
+  stage: build
+  image: eclipse-temurin:21
+  script:
+    - ./gradlew buildlayers
+    - ./gradlew dockerfile
+  artifacts:
+    when: on_success
+    paths:
+      - ./build/docker/main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+
+build-and-release-image:
+  stage: release
+  image: docker:28.4.0
+  services:
+    - docker:28.4.0-dind
+  before_script:
+    - docker info
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+
+  script:
+    - cd ./build/docker/main
+    - >
+      docker build --pull
+      -t "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA"
+      -t "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:latest"
+      .
+    - docker push "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH" --all-tags
+  
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+  needs:
+    - job: build-layers
+
+deploy-ecs:
+  stage: deploy
+  image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-ecs:latest
+  environment:
+    name: inventory-prod
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "main"'
+      when: always
+  script:
+    - ecs update-task-definition
+  needs:
+    - job: build-and-release-image
+
+container_scanning:
+  stage: scan
+  variables:
+    CS_IMAGE: "$CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA"
+  needs:
+    - job: build-and-release-image

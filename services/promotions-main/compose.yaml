@@ -1,0 +1,48 @@
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    command: -jar DynamoDBLocal.jar -sharedDb -inMemory
+    ports:
+      - "8000:8000"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: myuser
+      RABBITMQ_DEFAULT_PASS: secret
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Mgmt UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  promotions:
+    build:
+      context: .
+      target: runtime
+    image: promotions:local
+    depends_on:
+      dynamodb-local:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_REGION: ap-southeast-1
+      AWS_ACCESS_KEY_ID: localstack
+      AWS_SECRET_ACCESS_KEY: localstack
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+
+      # RabbitMQ connection
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: myuser
+      RABBITMQ_PASSWORD: secret
+
+      # Optional: expose actuator health/metrics
+      # MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+    ports:
+      - "8080:8080"

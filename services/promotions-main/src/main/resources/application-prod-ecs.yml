@@ -1,0 +1,39 @@
+dynamodb:
+  region: ${AWS_REGION:ap-southeast-1}
+  endpoint: ${DYNAMODB_ENDPOINT:}
+
+# RabbitMQ configuration for AmazonMQ
+# Connection details are provided via environment variables from S3-stored configuration
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5671}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    # SSL/TLS settings required for AmazonMQ
+    ssl:
+      enabled: true
+      algorithm: TLSv1.2
+    # Connection timeout and retry settings for production reliability
+    connection-timeout: 30000
+    requested-heartbeat: 60
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 5
+          multiplier: 2.0
+        default-requeue-rejected: false
+    template:
+      retry:
+        enabled: true
+        initial-interval: 1000
+        max-attempts: 5
+        multiplier: 2.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

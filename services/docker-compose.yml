@@ -1,0 +1,120 @@
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: -jar DynamoDBLocal.jar -sharedDb -inMemory
+    ports:
+      - "8000:8000"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: myuser
+      RABBITMQ_DEFAULT_PASS: secret
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  inventory-service:
+    build:
+      context: ./inventory-main
+    ports:
+      - "8081:8080"
+    environment:
+      MICRONAUT_ENVIRONMENTS: dev
+      MICRONAUT_SERVER_PORT: 8080
+      DYNAMODB_LOCAL_HOST: dynamodb
+      DYNAMODB_LOCAL_PORT: 8000
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: myuser
+      RABBITMQ_PASSWORD: secret
+    depends_on:
+      dynamodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  promotions-service:
+    build:
+      context: ./promotions-main
+      target: runtime
+    ports:
+      - "8082:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      AWS_REGION: ap-southeast-1
+      AWS_ACCESS_KEY_ID: localstack
+      AWS_SECRET_ACCESS_KEY: localstack
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: myuser
+      RABBITMQ_PASSWORD: secret
+    depends_on:
+      dynamodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./payment-release
+    ports:
+      - "8083:8080"
+    environment:
+      AWS_REGION: ap-southeast-1
+      AWS_ACCESS_KEY_ID: localstack
+      AWS_SECRET_ACCESS_KEY: localstack
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      #  The Stripe credentials must be supplied via an .env file or shell environment when running docker compose.
+      STRIPE_API_KEY: ${STRIPE_API_KEY:?set STRIPE_API_KEY in .env}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?set STRIPE_WEBHOOK_SECRET in .env}
+      SERVER_PORT: 8080
+    depends_on:
+      dynamodb:
+        condition: service_started
+
+  order-orchestrator-service:
+    build:
+      context: ./order-orchestrator-main
+    ports:
+      - "8084:8080"
+    environment:
+      INVENTORY_SERVICE_URL: http://inventory-service:8080
+      PROMOTIONS_SERVICE_URL: http://promotions-service:8080
+      PAYMENT_SERVICE_URL: http://payment-service:8080
+    depends_on:
+      inventory-service:
+        condition: service_started
+      promotions-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+
+  frontend:
+
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      INVENTORY_SERVICE_URL: http://inventory-service:8080
+      PROMOTIONS_SERVICE_URL: http://promotions-service:8080
+      PAYMENTS_SERVICE_URL: http://payment-service:8080
+      ORDER_ORCHESTRATOR_URL: http://order-orchestrator-service:8080
+    depends_on:
+      inventory-service:
+        condition: service_started
+      promotions-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      order-orchestrator-service:
+        condition: service_started
+    restart: unless-stopped

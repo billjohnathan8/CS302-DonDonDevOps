@@ -1,0 +1,6 @@
+applicationType: messaging
+defaultPackage: com.dondondevops
+testFramework: junit
+sourceLanguage: java
+buildTool: gradle
+features: [annotation-api, app-name, gitlab-workflow-ci, gradle, http-client-test, jackson-databind, java, java-application, json-schema, json-schema-validation, junit, kafka, logback, micronaut-aop, micronaut-build, properties, readme, serialization-jackson, shade, test-resources, validation]

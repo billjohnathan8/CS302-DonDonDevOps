@@ -1,0 +1,14 @@
+.git
+.gitlab-ci.yml
+.gradle
+build
+bin
+out
+.idea
+.vscode
+*.iml
+*.ipr
+*.iws
+**/node_modules
+*.log
+Dockerfile.local

@@ -1,0 +1,15 @@
+#Thu Oct 30 13:27:32 UTC 2025
+micronaut:
+  application:
+    name: inventory
+  server:
+    port: ${MICRONAUT_SERVER_PORT:8080}
+
+  serde:
+    write-dates-as-timestamps: false
+
+rabbitmq:
+  host: localhost
+  port: 5672
+  username: myuser
+  password: secret
