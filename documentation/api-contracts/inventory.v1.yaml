@@ -1,0 +1,550 @@
+openapi: 3.1.0
+info:
+  title: Inventory Service API
+  version: 1.0.0
+  description: >
+    CRUD for products and stock operations (reserve/commit/release, restock).
+    Designed for orchestration by the Order/Composite service and for direct
+    reads by UI and other services. Publishes low-stock / expiring / restocked
+    events via the message broker (event payloads specified in components.schemas).
+
+servers:
+  - url: https://inventory.{env}.example.com/v1
+    description: Environmented hostname
+    variables:
+      env:
+        default: staging
+        enum: [local, staging, prod]
+  - url: http://inventory-service:8000/v1
+    description: In-cluster/internal (Docker/K8s)
+
+tags:
+  - name: Products
+  - name: Inventory
+  - name: Health
+  - name: Events (schemas)
+
+paths:
+  /products:
+    get:
+      tags: [Products]
+      operationId: listProducts
+      summary: List products (cursor pagination + simple filters)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/Category'
+        - $ref: '#/components/parameters/Brand'
+        - $ref: '#/components/parameters/MinStock'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Next-Cursor:
+              description: Cursor for next page, if present
+              schema: { type: string, nullable: true }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Product' }
+                  count: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+    post:
+      tags: [Products]
+      operationId: createProduct
+      summary: Create a product (idempotent with X-Idempotency-Key)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewProduct' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URL of created resource
+              schema: { type: string, format: uri }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /products/{productId}:
+    get:
+      tags: [Products]
+      operationId: getProduct
+      summary: Get a product by ID
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+    patch:
+      tags: [Products]
+      operationId: updateProduct
+      summary: Partially update a product (name/brand/category/price/stock/expiryDate)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductPatch' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+    delete:
+      tags: [Products]
+      operationId: deleteProduct
+      summary: Delete a product
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '204': { description: No Content }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /inventory/reservations:
+    post:
+      tags: [Inventory]
+      operationId: createReservation
+      summary: Reserve stock for one or more products (short TTL hold)
+      description: >
+        Creates a short-lived reservation ("hold") for items prior to payment.
+        Use commit to decrement stock, or release to drop the hold.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Insufficient stock for one or more items
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /inventory/reservations/{reservationId}:
+    get:
+      tags: [Inventory]
+      operationId: getReservation
+      summary: Get reservation status/details
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /inventory/reservations/{reservationId}/commit:
+    post:
+      tags: [Inventory]
+      operationId: commitReservation
+      summary: Commit reservation (decrement stock atomically)
+      description: >
+        Idempotent: repeating the same call with the same reservationId has no
+        additional effect once committed.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      responses:
+        '200':
+          description: Committed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationCommitResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Reservation expired or already released
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /inventory/reservations/{reservationId}/release:
+    post:
+      tags: [Inventory]
+      operationId: releaseReservation
+      summary: Release reservation (return held quantities)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '204': { description: Released }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /inventory/restocks:
+    post:
+      tags: [Inventory]
+      operationId: restockItems
+      summary: Increase stock levels (optionally with new expiry date/lot)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RestockRequest' }
+      responses:
+        '200':
+          description: Restocked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestockResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /health:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: Service health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [UP] }
+                  ip: { type: string }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: api_gateway_key
+
+  parameters:
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Product identifier
+    ReservationId:
+      name: reservationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Q:
+      name: q
+      in: query
+      schema: { type: string }
+      description: Search by name/brand/category
+    Category:
+      name: category
+      in: query
+      schema: { type: string }
+    Brand:
+      name: brand
+      in: query
+      schema: { type: string }
+    MinStock:
+      name: minStock
+      in: query
+      schema: { type: integer, minimum: 0 }
+    XRequestID:
+      name: X-Request-ID
+      in: header
+      schema: { type: string }
+      description: Correlation ID
+    XIdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      schema: { type: string, minLength: 8, maxLength: 80 }
+      description: Prevents duplicate create/commit/restock on retries
+
+  schemas:
+    Product:
+      type: object
+      required: [id, name, price, currency, stock, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        brand: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        price: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        stock: { type: integer, minimum: 0 }
+        expiryDate: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    NewProduct:
+      type: object
+      required: [name, price, stock]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        brand: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        price: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        stock: { type: integer, minimum: 0 }
+        expiryDate: { type: string, format: date-time, nullable: true }
+
+    ProductPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        brand: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        price: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        stock: { type: integer, minimum: 0 }
+        expiryDate: { type: string, format: date-time, nullable: true }
+
+    ReservationRequest:
+      type: object
+      required: [items]
+      properties:
+        ttlSeconds:
+          type: integer
+          minimum: 30
+          maximum: 1800
+          default: 300
+          description: Hold duration before automatic expiry
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+
+    Reservation:
+      type: object
+      required: [id, status, items, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [held, committed, released, expired] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReservationItem' }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    ReservationItem:
+      type: object
+      required: [productId, requestedQty, reservedQty, availableBefore]
+      properties:
+        productId: { type: string, format: uuid }
+        requestedQty: { type: integer, minimum: 1 }
+        reservedQty: { type: integer, minimum: 0 }
+        availableBefore: { type: integer, minimum: 0 }
+
+    ReservationCommitResult:
+      type: object
+      required: [reservationId, status, items]
+      properties:
+        reservationId: { type: string, format: uuid }
+        status: { type: string, enum: [committed] }
+        items:
+          type: array
+          items:
+            type: object
+            required: [productId, decremented, stockRemaining]
+            properties:
+              productId: { type: string, format: uuid }
+              decremented: { type: integer, minimum: 0 }
+              stockRemaining: { type: integer, minimum: 0 }
+
+    RestockRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+              expiryDate: { type: string, format: date-time, nullable: true }
+              note: { type: string, maxLength: 200, nullable: true }
+
+    RestockResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [productId, added, stockAfter]
+            properties:
+              productId: { type: string, format: uuid }
+              added: { type: integer, minimum: 0 }
+              stockAfter: { type: integer, minimum: 0 }
+
+    # Event payloads (for your AMQP/Kafka topics)
+    LowStockEvent:
+      type: object
+      description: Emitted when stock falls below threshold
+      properties:
+        eventType: { const: inventory.low_stock }
+        productId: { type: string, format: uuid }
+        stock: { type: integer, minimum: 0 }
+        threshold: { type: integer, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
+      required: [eventType, productId, stock, threshold, occurredAt]
+
+    ExpiringSoonEvent:
+      type: object
+      description: Emitted when expiryDate is approaching
+      properties:
+        eventType: { const: inventory.expiring_soon }
+        productId: { type: string, format: uuid }
+        expiryDate: { type: string, format: date-time }
+        daysRemaining: { type: integer, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
+      required: [eventType, productId, expiryDate, daysRemaining, occurredAt]
+
+    RestockedEvent:
+      type: object
+      description: Emitted when new stock is added
+      properties:
+        eventType: { const: inventory.restocked }
+        items:
+          type: array
+          items:
+            type: object
+            required: [productId, added, stockAfter]
+            properties:
+              productId: { type: string, format: uuid }
+              added: { type: integer, minimum: 1 }
+              stockAfter: { type: integer, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
+      required: [eventType, items, occurredAt]
+
+    Problem:
+      type: object
+      description: RFC 7807 problem+json
+      properties:
+        type:   { type: string, format: uri }
+        title:  { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri }
+      required: [title, status]
+
+  responses:
+    BadRequest:
+      description: Validation or malformed input
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing/invalid API key
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict (e.g., duplicate product name/sku)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: Semantically invalid (e.g., negative stock)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServerError:
+      description: Unexpected error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

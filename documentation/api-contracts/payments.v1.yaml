@@ -1,0 +1,465 @@
+openapi: 3.1.0
+info:
+  title: Payments Service API
+  version: 1.0.0
+  description: >
+    Handles payment intent/charge orchestration with Stripe (or other providers),
+    persists Receipts, and exposes receipt retrieval for the UI/composite service.
+
+servers:
+  - url: https://payments.{env}.example.com/v1
+    description: Environmented hostname
+    variables:
+      env: { default: staging, enum: [local, staging, prod] }
+  - url: http://payments-service:8000/v1
+    description: In-cluster/internal (Docker/K8s)
+
+tags:
+  - name: Checkout
+  - name: Receipts
+  - name: Webhooks
+  - name: Health
+  - name: Events (schemas)
+
+paths:
+  /payments/checkout:
+    post:
+      tags: [Checkout]
+      operationId: createAndConfirmPayment
+      summary: Create & confirm a payment with the provider; return result + optional receipt
+      description: >
+        For Stripe, creates a Payment Intent and (optionally) confirms it using a provided
+        paymentMethodId. Use X-Idempotency-Key to protect against double-charges on retries.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '200':
+          description: Payment processed (synchronous success/failure or requires action)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /payments/intents:
+    post:
+      tags: [Checkout]
+      operationId: createPaymentIntent
+      summary: Create a payment intent (client-driven confirmation flow)
+      description: >
+        Returns a clientSecret when using Stripe so the frontend can confirm with Stripe.js.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentIntentRequest' }
+      responses:
+        '201':
+          description: Intent created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /receipts:
+    get:
+      tags: [Receipts]
+      operationId: listReceipts
+      summary: List receipts (cursor pagination, basic filters)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Next-Cursor:
+              description: Cursor for next page if present
+              schema: { type: string, nullable: true }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Receipt' }
+                  count: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+    post:
+      tags: [Receipts]
+      operationId: createReceipt
+      summary: Persist a receipt record (usually after provider success)
+      description: >
+        Used by the composite/orchestrator or by provider webhooks after a successful payment.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewReceipt' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URL of created resource
+              schema: { type: string, format: uri }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /receipts/{receiptId}:
+    get:
+      tags: [Receipts]
+      operationId: getReceipt
+      summary: Get receipt by ID
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ReceiptId'
+        - $ref: '#/components/parameters/XRequestID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      operationId: handleStripeWebhook
+      summary: Stripe webhook endpoint (payment succeeded/failed, refund, etc.)
+      description: >
+        Verifies `Stripe-Signature` and processes events. Usually creates/updates Receipts
+        and may emit PaymentSucceeded/Failed events.
+      security: []   # webhook auth is signature-based, not API key
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          description: Stripe signing secret header used for verification
+          schema: { type: string }
+        - $ref: '#/components/parameters/XRequestID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StripeWebhookEvent' }
+      responses:
+        '200': { description: Acknowledged }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /health:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: Service health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [UP] }
+                  ip: { type: string }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: api_gateway_key
+
+  parameters:
+    ReceiptId:
+      name: receiptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Q:
+      name: q
+      in: query
+      schema: { type: string }
+      description: Search by receipt id / provider id / email
+    Currency:
+      name: currency
+      in: query
+      schema: { type: string, pattern: '^[A-Z]{3}$' }
+    Status:
+      name: status
+      in: query
+      schema: { type: string, enum: [succeeded, failed, requires_action, processing, refunded, partially_refunded] }
+    XRequestID:
+      name: X-Request-ID
+      in: header
+      schema: { type: string }
+      description: Correlation ID carried across services
+    XIdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      schema: { type: string, minLength: 8, maxLength: 80 }
+      description: Prevents duplicate charges/receipts on retries
+
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: float
+          minimum: 0
+          description: Amount in major currency units (e.g., 12.34 = $12.34)
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          default: SGD
+
+    CheckoutRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        paymentMethodId:
+          type: string
+          nullable: true
+          description: Provider payment method identifier (e.g., Stripe PM_xxx)
+        confirm:
+          type: boolean
+          default: true
+          description: If true, confirm immediately (server-side)
+        description: { type: string, maxLength: 200, nullable: true }
+        receiptEmail: { type: string, format: email, nullable: true }
+        orderId: { type: string, format: uuid, nullable: true }
+        cart:
+          type: object
+          description: Snapshot of the cart at checkout (arbitrary JSON)
+          additionalProperties: true
+        provider:
+          type: string
+          enum: [stripe]
+          default: stripe
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    CheckoutResult:
+      type: object
+      required: [provider, status]
+      properties:
+        provider: { type: string, enum: [stripe] }
+        status: { type: string, enum: [succeeded, failed, requires_action, processing] }
+        providerPaymentId:
+          type: string
+          description: Stripe PaymentIntent or Charge id
+        clientSecret:
+          type: string
+          nullable: true
+          description: Present if further client-side action is required
+        receiptId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present when a receipt record was created
+        error:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    PaymentIntentRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        description: { type: string, maxLength: 200, nullable: true }
+        receiptEmail: { type: string, format: email, nullable: true }
+        orderId: { type: string, format: uuid, nullable: true }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+
+    PaymentIntent:
+      type: object
+      required: [provider, providerIntentId, status]
+      properties:
+        provider: { type: string, enum: [stripe] }
+        providerIntentId: { type: string }
+        status: { type: string, enum: [requires_action, requires_payment_method, processing, succeeded] }
+        clientSecret: { type: string, nullable: true }
+        amount: { type: number, format: float }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+
+    Receipt:
+      type: object
+      required: [id, createdAt, amount, currency, status]
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        amount: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        provider: { type: string, enum: [stripe] }
+        providerPaymentId: { type: string }
+        status: { type: string, enum: [succeeded, failed, refunded, partially_refunded] }
+        orderId: { type: string, format: uuid, nullable: true }
+        cart:
+          type: object
+          description: JSON snapshot of cart items at purchase time
+          additionalProperties: true
+        receiptEmail: { type: string, format: email, nullable: true }
+        rawProviderResponse:
+          type: object
+          description: Optional sanitized provider payload for audit
+          additionalProperties: true
+
+    NewReceipt:
+      type: object
+      required: [amount, currency, status, provider, providerPaymentId]
+      properties:
+        amount: { type: number, format: float, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$', default: SGD }
+        status: { type: string, enum: [succeeded, failed, refunded, partially_refunded] }
+        provider: { type: string, enum: [stripe] }
+        providerPaymentId: { type: string }
+        orderId: { type: string, format: uuid, nullable: true }
+        cart:
+          type: object
+          additionalProperties: true
+        receiptEmail: { type: string, format: email, nullable: true }
+        rawProviderResponse:
+          type: object
+          additionalProperties: true
+
+    # Webhook payload (subset)
+    StripeWebhookEvent:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          description: Stripe event type (e.g., payment_intent.succeeded)
+        data:
+          type: object
+          additionalProperties: true
+      required: [id, type, data]
+
+    # Events your service may publish to the broker
+    PaymentSucceededEvent:
+      type: object
+      properties:
+        eventType: { const: payment.succeeded }
+        receiptId: { type: string, format: uuid }
+        providerPaymentId: { type: string }
+        amount: { type: number, format: float }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        orderId: { type: string, format: uuid, nullable: true }
+        occurredAt: { type: string, format: date-time }
+      required: [eventType, receiptId, providerPaymentId, amount, currency, occurredAt]
+
+    PaymentFailedEvent:
+      type: object
+      properties:
+        eventType: { const: payment.failed }
+        providerPaymentId: { type: string }
+        reason: { type: string }
+        orderId: { type: string, format: uuid, nullable: true }
+        occurredAt: { type: string, format: date-time }
+      required: [eventType, providerPaymentId, occurredAt]
+
+    Problem:
+      type: object
+      description: RFC 7807 problem+json
+      properties:
+        type:   { type: string, format: uri }
+        title:  { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri }
+      required: [title, status]
+
+  responses:
+    BadRequest:
+      description: Validation or malformed input
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing/invalid auth
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict (e.g., duplicate idempotency key)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: Semantically invalid request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServerError:
+      description: Unexpected error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
