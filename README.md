@@ -19,12 +19,12 @@ DonDonDevOps is a microservices-based point-of-sales platform for retail teams. 
 - **Cloud**: AWS-managed services for compute, storage, and observability
 - **Toolchain**: Docker & Docker Compose for consistent environments, Gradle for JVM builds, Stripe API for payments, GitHub for historical documentation (retired)
 
-## DevOps Practices
-- **CI/CD**: GitLab pipelines with SonarQube gates, automated tests, and per-service deployment tracks
-- **Infrastructure as Code**: Terraform modules plus Terraformer for drift detection and rapid provisioning
+## Applied DevOps Practices
+- **CI/CD & Automated Testing**: GitLab pipelines with SonarQube gates, automated tests, and per-service deployment tracks
+- **Infrastructure as Code (IaC)**: Terraform modules plus Terraformer for drift detection and rapid provisioning
 - **Service Health**: Mandatory `/health` endpoints and smoke tests for every deployable unit
 - **Documentation**: Shared docs under `shared/docs/` capture runbooks, API contracts, and operational decisions
-- **Collaboration**: Telegram alerts for major changes kept everyone aligned on rollout plans
+- **Collaboration**: Manual Discord/Telegram alert workflow procedure for major changes kept everyone aligned on rollout plans
 
 ## Development Workflow
 - Clone or pull from each microservice directory rather than the monorepo root
